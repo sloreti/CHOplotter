@@ -2,8 +2,7 @@
 
 import datetime
 import openpyxl
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
+import time
 
 
 class Procedure(object):
@@ -28,8 +27,9 @@ class Procedure(object):
         self.logNum = procParams.logNum
         self.straddledMidnight = False
 
+
         self.ensureAllEntriesCorrect(procParams)
-        self.calculateDelays()
+        # self.calculateDelays()
 
 
     def ensureAllEntriesCorrect(self, procParams):
@@ -113,42 +113,50 @@ class ProcedureParams(object):
         self.loc = row[16].value
         self.logNum = row[18].value
 
+class StatAggregator(object):
 
-wb = openpyxl.load_workbook('ProceduresData.xlsx')
-sheet = wb.active
+    def __init__(self, excel, min=1, max=None):
 
-delayedStarts = []
-dates = []
-for row in sheet.rows[1:200]:
-    params = ProcedureParams(row)
-    proc = Procedure(params)
-    delayedStarts.append(proc.delayedStart)
-    dates.append(proc.date)
+        start = time.clock()
+        wb = openpyxl.load_workbook(excel)
+        sheet = wb.active
+        finish = time.clock()
+        print "Loading workbook took " + str(finish - start) + " seconds"
 
-# calculate avgs
-dailyAvgs=[]
-dailyAvgDates=[]
-i = 0
-while i < len(dates):
-    total = 0
-    count = 0
-    curr = dates[i]
-    while i < len(dates) and dates[i] == curr:
-        total += delayedStarts[i]
-        count += 1
-        i += 1
-    dailyAvgDates.append(total/count)
-    dailyAvgDates.append(curr)
+        self.procs = []
+        # self.delayedStarts = []
+        self.dates = []
 
+        max = max+1 if max else len(sheet.rows)
+        for row in sheet.rows[min:max]:
+            params = ProcedureParams(row)
+            proc = Procedure(params)
 
+            if proc.schedStart:
+                self.procs.append(proc)
+                # self.delayedStarts.append(proc.delayedStart)
+                self.dates.append(proc.date)
 
-
-
-plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%m/%d/%Y'))
-plt.gca().xaxis.set_major_locator(mdates.DayLocator())
-plt.scatter(dates,delayedStarts)
-# plt.plot(dailyAvgDates, dailyAvgs)
-plt.show()
+        # # calculate avgs
+        # dailyAvgs=[]
+        # dailyAvgDates=[]
+        # i = 0
+        # while i < len(dates):
+        #     total = 0
+        #     count = 0
+        #     curr = dates[i]
+        #     while i < len(dates) and dates[i] == curr:
+        #         total += delayedStarts[i]
+        #         count += 1
+        #         i += 1
+        #     dailyAvgDates.append(total/count)
+        #     dailyAvgDates.append(curr)
+        #
+        # plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%m/%d/%Y'))
+        # plt.gca().xaxis.set_major_locator(mdates.DayLocator())
+        # plt.scatter(dates,delayedStarts)
+        # # plt.plot(dailyAvgDates, dailyAvgs)
+        # plt.show()
 
 
 
