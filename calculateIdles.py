@@ -194,7 +194,7 @@ def idlePlotter(excel, roomPlots):
 
 
 
-excel = sa.StatAggregator('2016.xlsx', max=1000)
+excel = sa.StatAggregator('Report for Dr Stehr_Jean Walrand 2016.xlsx', max=1000)
 roomIdles = calculateIdles(excel.procs)[2]
 roomPlots = idleDictsToTuples(roomIdles)
 idlePlotter(excel, roomPlots)
