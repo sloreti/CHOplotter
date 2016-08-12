@@ -119,7 +119,7 @@ class StatAggregator(object):
 
         start = time.clock()
         wb = openpyxl.load_workbook(excel)
-        sheet = wb.active
+        sheet = wb.worksheets[0]
         finish = time.clock()
         print "Loading workbook took " + str(finish - start) + " seconds"
 
