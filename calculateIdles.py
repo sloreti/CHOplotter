@@ -1,7 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import datetime as dt
-import time
 
 import statAggregator as sa
 
@@ -12,10 +11,12 @@ def calculateIdles(procs):
 
     Outputs:
     dailyIdles - a list of total idle time per day, in minutes
+    roomIdles - a list of dicts, where keys are rooms and values are liberal and conservative idle times. Each dict is one day.
     """
 
     dailyIdlesConservative = []
     dailyIdlesLiberal = []
+    roomIdles = []
     i = 0
     while i < len(procs):
 
@@ -26,21 +27,23 @@ def calculateIdles(procs):
             i += 1
 
         idBlocks(todaysProcs)
-        inRoomMinusProcEnds, inRoomMinusOutRooms, roomIdles= findIdles(todaysProcs)
+        inRoomMinusProcEnds, inRoomMinusOutRooms, roomIdle = findIdles(todaysProcs)
         dailyIdlesConservative.append(sum(inRoomMinusOutRooms, dt.timedelta()))
         dailyIdlesLiberal.append(sum(inRoomMinusProcEnds, dt.timedelta()))
+        roomIdles.append(roomIdle)
 
-    print "Done"
+
     conservativeMins = [x.seconds / 60 for x in dailyIdlesConservative]
     liberalMins = [x.seconds / 60 for x in dailyIdlesLiberal]
-    return conservativeMins, liberalMins
+    return conservativeMins, liberalMins, roomIdles
 
 def idBlocks(procs):
     """
     Inputs:
     procs - a list of exactly one days worth of Procedure objects
 
-    TODO: description of idBlocks
+    idBlocks() adds a blockId field to each procedure, identifying which block the procedure belongs to. Indexing
+    starts at 0 every day, so only useful for looking at blocks within the same day.
     """
 
     # Group the procedure start and end times by room
@@ -68,7 +71,9 @@ def findIdles(procs):
     procs - a list of exactly one days worth of Procedure objects
 
     Outputs:
-    idles - a list of all idle durations, in minutes
+    inRoomMinusProcEnds -
+    inRoomMinusProcEnds -
+    roomIdles - a dict where keys are rooms and values are liberal and conservative idle times. Repersents one day.
     """
 
     # Group the procedure start and end times by room
@@ -106,46 +111,36 @@ def findIdles(procs):
         roomIdleLib = sum(roomIdleLib, dt.timedelta())
         inRoomMinusProcEnds.append(roomIdleLib)
         inRoomMinusOutRooms.append(roomIdleCon)
+        roomIdleCon = roomIdleCon.seconds / 60 # convert to int in minutes
+        roomIdleLib = roomIdleLib.seconds / 60 # convert to int in minutes
         roomIdles[room] = [roomIdleCon, roomIdleLib]
 
     return inRoomMinusProcEnds, inRoomMinusOutRooms, roomIdles
 
 
-def doubleBarChart(excel, groupA, groupB):
+def idleDictsToTuples(dictsOfIdles):
+    """
+    Inputs:
+    dictsOfIdles - a list of dicts, where keys are rooms and values are liberal and conservative idle times. Each dict is one day.
 
-    nameA = groupA[0]
-    nameB =  groupB[0]
-    dataA = groupA[1]
-    dataB = groupB[1]
+    Outputs:
+    roomPlots - a list of plottable 3-tuples. First value is rooms, second is conservative idle time, third is liberal idle time
+    """
 
-    ind = np.arange(len(dataA))  # the x locations for the groups
-    width = 0.2  # the width of the bars
+    roomPlots = []
+    for d in dictsOfIdles:
+        items = d.items()
+        rooms = [i[0] for i in items]
+        conservatives = [i[1][0] for i in items]
+        liberals = [i[1][1] for i in items]
+        roomPlots.append((rooms, conservatives, liberals))
 
-    fig, ax = plt.subplots()
-    rects1 = ax.bar(ind, dataA, width, color='r')
-    rects2 = ax.bar(ind + width, dataB, width, color='y')
+    return roomPlots
 
-    # add some text for labels, title and axes ticks
-    ax.set_ylabel('Minutes')
-    ax.set_title('Idle Minutes')
-    ax.set_xticks(ind + width / 2)
-    dateRange = [(excel.procs[0].date + dt.timedelta(days=d)).isoformat()[:10] for d in
-                 range(len(dataA))]
-    ax.set_xticklabels(dateRange, rotation=90)
 
-    ax.legend((rects1[0], rects2[0]), (nameA, nameB))
-    plt.show()
+def idlePlotter(excel, roomPlots):
 
-def idlePlotter():
-
-    # define your x and y arrays to be plotted
-    t = np.linspace(start=0, stop=2 * np.pi, num=100)
-    y1 = np.cos(t)
-    y2 = np.sin(t)
-    y3 = np.tan(t)
-    plots = [(t, y1), (t, y2), (t, y3)]
-
-    # now the real code :)
+    # Closure is needed so that key_event can write to curr_pos
     def callback():
         curr_pos = [0]
         def key_event(e):
@@ -156,31 +151,51 @@ def idlePlotter():
                 curr_pos[0] -= 1
             else:
                 return
-            curr_pos[0] = curr_pos[0] % len(plots)
+            curr_pos[0] = curr_pos[0] % len(roomPlots)
+            currDay = (excel.procs[0].date + dt.timedelta(days=curr_pos[0])).isoformat()[:10]
 
             ax.cla()
-            ax.plot(plots[curr_pos[0]][0], plots[curr_pos[0]][1])
+            rooms = roomPlots[curr_pos[0]][0]
+            conservatives = roomPlots[curr_pos[0]][1]
+            liberals = roomPlots[curr_pos[0]][2]
+            ind = np.arange(len(rooms))
+            width = 0.2
+
+            rects1 = ax.bar(ind, conservatives, width, color='r')
+            rects2 = ax.bar(ind + width, liberals, width, color='y')
+
+            ax.set_xticks(ind + width / 2)
+            ax.set_xticklabels(rooms, rotation=90)
+            ax.set_title(currDay)
+            ax.legend((rects1[0], rects2[0]), ('conservative', 'liberal'))
             fig.canvas.draw()
         return key_event
 
     fig = plt.figure()
     fig.canvas.mpl_connect('key_press_event', callback())
     ax = fig.add_subplot(111)
-    ax.plot(t, y1)
+
+    rooms = roomPlots[0][0]
+    conservatives = roomPlots[0][1]
+    liberals = roomPlots[0][2]
+    currDay = excel.procs[0].date.isoformat()[:10]
+    ind = np.arange(len(rooms))
+    width = 0.2
+
+    rects1 = ax.bar(ind, conservatives, width, color='r')
+    rects2 = ax.bar(ind + width, liberals, width, color='y')
+
+    ax.set_xticks(ind + width / 2)
+    ax.set_xticklabels(rooms, rotation=90)
+    ax.set_title(currDay)
+    ax.legend((rects1[0], rects2[0]), ('conservative', 'liberal'))
+    ax.set_ylabel('Minutes')
     plt.show()
 
 
-# # start = time.clock()
-# excel = sa.StatAggregator('ProceduresData.xlsx', max=1000)
-# # finish = time.clock()
-# # print "Loading excel took " + str(finish - start) + " seconds"
-#
-# # start = time.clock()
-# dailyIdlesConservative, dailyIdlesLiberal = calculateIdles(excel.procs)
-# # finish = time.clock()
-# # print "calculateIdles() took " + str(finish - start) + " seconds"
-#
-# doubleBarChart(excel, ('conservative', dailyIdlesConservative), ('liberal', dailyIdlesLiberal))
 
-idlePlotter()
+excel = sa.StatAggregator('2016.xlsx', max=1000)
+roomIdles = calculateIdles(excel.procs)[2]
+roomPlots = idleDictsToTuples(roomIdles)
+idlePlotter(excel, roomPlots)
 
