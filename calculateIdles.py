@@ -1,22 +1,26 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import datetime as dt
+import copy
 
 import statAggregator as sa
 
-def calculateIdles(procs):
+def calculateIdleStats(procs):
     """
     Inputs:
     procs - a list of at least one days worth of Procedure objects
 
     Outputs:
-    dailyIdles - a list of total idle time per day, in minutes
-    roomIdles - a list of dicts, where keys are rooms and values are liberal and conservative idle times. Each dict is one day.
+    roomCumIdles - a list of dicts, where keys are rooms and values are cumulative conservative idle time, cumulative
+    liberal idle time, and number of idle intervals. Each dict is one day.
     """
 
-    dailyIdlesConservative = []
-    dailyIdlesLiberal = []
-    roomIdles = []
+    roomCumIdles = []
+    roomCons = makeRoomsDict(procs)
+    for r in roomCons.keys(): # make all rooms empty lists
+        roomCons[r] = []
+    roomLibs = copy.deepcopy(roomCons)
+
     i = 0
     while i < len(procs):
 
@@ -27,15 +31,13 @@ def calculateIdles(procs):
             i += 1
 
         idBlocks(todaysProcs)
-        inRoomMinusProcEnds, inRoomMinusOutRooms, roomIdle = findIdles(todaysProcs)
-        dailyIdlesConservative.append(sum(inRoomMinusOutRooms, dt.timedelta()))
-        dailyIdlesLiberal.append(sum(inRoomMinusProcEnds, dt.timedelta()))
-        roomIdles.append(roomIdle)
+        roomIdle = findIdles(todaysProcs, roomCons, roomLibs)
+        roomCumIdles.append(roomIdle)
 
 
-    conservativeMins = [x.seconds / 60 for x in dailyIdlesConservative]
-    liberalMins = [x.seconds / 60 for x in dailyIdlesLiberal]
-    return conservativeMins, liberalMins, roomIdles
+    idealCons, idealLibs = calculateIdealIdles(roomCons, roomLibs)
+
+    return idealCons, idealLibs, roomCumIdles
 
 def idBlocks(procs):
     """
@@ -46,13 +48,8 @@ def idBlocks(procs):
     starts at 0 every day, so only useful for looking at blocks within the same day.
     """
 
-    # Group the procedure start and end times by room
-    rooms = {}
-    for proc in procs:
-        if proc.room in rooms:
-            rooms[proc.room].append(proc)
-        else:
-            rooms[proc.room] = [proc]
+    # Group the procedures by room
+    rooms = makeRoomsDict(procs)
 
     # Join contiguous procedures into blocks with blockIds
     blockId = 0
@@ -65,29 +62,22 @@ def idBlocks(procs):
             surgery.blockId = blockId
         blockId += 1
 
-def findIdles(procs):
+def findIdles(procs, roomCons, roomLibs):
     """
     Inputs:
     procs - a list of exactly one days worth of Procedure objects
 
     Outputs:
-    inRoomMinusProcEnds -
-    inRoomMinusProcEnds -
-    roomIdles - a dict where keys are rooms and values are liberal and conservative idle times. Repersents one day.
+    cons -
+    libs -
+    roomIdles - a dict where keys are rooms and values are liberal and conservative idle times. Represents one day.
     """
 
-    # Group the procedure start and end times by room
-    rooms = {}
-    for proc in procs:
-        if proc.room in rooms:
-            rooms[proc.room].append(proc)
-        else:
-            rooms[proc.room] = [proc]
+    # Group the procedures by room
+    rooms = makeRoomsDict(procs)
 
     # Calculate idles
     roomIdles = {}
-    inRoomMinusProcEnds = []
-    inRoomMinusOutRooms = []
     for room, surgeries in rooms.items():
         surgeries.sort(key=lambda x: x.inRoom) # sort by real start time
 
@@ -95,8 +85,8 @@ def findIdles(procs):
         # if surgeries != sortedBySchedStart: # TODO: remove after more thorough debugging
         #     print "oops"
 
-        roomIdleCon = []
-        roomIdleLib = []
+        cons = []
+        libs = []
         for i, surgery in enumerate(surgeries[1:]):
             if surgery.blockId == surgeries[i].blockId:
                 # must be datetimes, not time objects, for subtraction
@@ -104,18 +94,67 @@ def findIdles(procs):
                 prevProcEnd = dt.datetime.combine(dt.datetime(1,1,1), surgeries[i].procEnd)
                 prevOutRoom = dt.datetime.combine(dt.datetime(1,1,1), surgeries[i].outRoom)
 
-                roomIdleLib.append(inRoom - prevProcEnd)
-                roomIdleCon.append(inRoom - prevOutRoom)
+                cons.append(inRoom - prevOutRoom)
+                libs.append(inRoom - prevProcEnd)
 
-        roomIdleCon = sum(roomIdleCon, dt.timedelta())
-        roomIdleLib = sum(roomIdleLib, dt.timedelta())
-        inRoomMinusProcEnds.append(roomIdleLib)
-        inRoomMinusOutRooms.append(roomIdleCon)
-        roomIdleCon = roomIdleCon.seconds / 60 # convert to int in minutes
-        roomIdleLib = roomIdleLib.seconds / 60 # convert to int in minutes
-        roomIdles[room] = [roomIdleCon, roomIdleLib]
+        cons = [c.seconds / 60 for c in cons] # convert to int in minutes
+        libs = [l.seconds / 60 for l in libs] # convert to int in minutes
+        cumCon = sum(cons)
+        cumLib = sum(libs)
+        roomIdles[room] = [cumCon, cumLib, len(cons)]
 
-    return inRoomMinusProcEnds, inRoomMinusOutRooms, roomIdles
+        roomCons[room].extend(cons)
+        roomLibs[room].extend(libs)
+
+    return roomIdles
+
+
+def calculateIdealIdles(roomCons, roomLibs, percentileToAvg=-1):
+    """
+    Inputs:
+    roomCons - Dict. Keys are rooms, values are lists of individual idle times in minutes
+    roomLibs - Dict. Keys are rooms, values are lists of individual idle times in minutes
+    percentileToAvg - Float. A value of 0.1 will average the fastest 10% of idle times. Values < 0 or > 1 will use
+    only the fastest time
+
+    Outputs:
+    idealCons - Dict. Keys are rooms, values are estimated ideal cleaning times
+    idealLibs - Dict. Keys are rooms, values are estimated ideal cleaning times
+    """
+
+    idealCons = {}
+    idealLibs = {}
+    for room in roomCons:
+
+        # skip rooms that have no idle times (usually PICU or NICU)
+        if not roomCons[room]:
+            continue
+
+        # room will be in both dicts
+        roomCons[room].sort()
+        roomLibs[room].sort()
+
+        if percentileToAvg > 1 or percentileToAvg < 0:
+            idealCons[room] = roomCons[room][0]
+            idealLibs[room] = roomLibs[room][0]
+        else:
+            upperIndex = int(len(roomCons[room]) * percentileToAvg) - 1
+            conMean =  sum(roomCons[room][0:upperIndex]) / (upperIndex+1)
+            libMean =  sum(roomLibs[room][0:upperIndex]) / (upperIndex+1)
+            idealCons[room] = conMean
+            idealLibs[room] = libMean
+
+    return idealCons, idealLibs
+
+
+def makeRoomsDict(procs):
+    rooms = {}
+    for proc in procs:
+        if proc.room in rooms:
+            rooms[proc.room].append(proc)
+        else:
+            rooms[proc.room] = [proc]
+    return rooms
 
 
 def idleDictsToTuples(dictsOfIdles):
@@ -192,10 +231,50 @@ def idlePlotter(excel, roomPlots):
     ax.set_ylabel('Minutes')
     plt.show()
 
+def makeRealRoomIdles(roomIdles, idealCons, idealLibs):
+
+    realRoomIdles = []
+    for r in roomIdles:
+        newIdles = {}
+        for room, idles in r.items():
+            try:
+                newIdles[room] = [idles[0] - idealCons[room]*idles[2], idles[1] - idealLibs[room]*idles[2]]
+            except KeyError:
+                newIdles[room] = [idles[0], idles[1]]
+        realRoomIdles.append(newIdles)
+    return realRoomIdles
+
+def plotTrueIdleDist(roomIdles):
+
+    # TODO: do liberal too
+    allCumIdles = []
+    for r in roomIdles:
+        for room, idles in r.items():
+            allCumIdles.append(idles[0])
+
+    allCumIdles.sort()
+    # get rid of zeros
+    allCumIdles = [i for i in allCumIdles if i != 0]
+
+    # the histogram of the data
+    n, bins, patches = plt.hist(allCumIdles, 60, facecolor='blue', alpha=0.75)
+
+    plt.xlabel('Cumulative Idle Minutes per OR per Day')
+    plt.ylabel('Occurences')
+    plt.title('True Idle Distribution')
+    plt.grid(True)
+
+    plt.show()
+
+
+
+
 
 
 excel = sa.StatAggregator('Report for Dr Stehr_Jean Walrand 2016.xlsx', max=1000)
-roomIdles = calculateIdles(excel.procs)[2]
+idealCons, idealLibs, roomIdles = calculateIdleStats(excel.procs)
+# realRoomIdles = makeRealRoomIdles(roomIdles, idealCons, idealLibs)
+# plotTrueIdleDist(realRoomIdles)
 roomPlots = idleDictsToTuples(roomIdles)
 idlePlotter(excel, roomPlots)
 

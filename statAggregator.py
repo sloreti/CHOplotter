@@ -132,7 +132,7 @@ class StatAggregator(object):
             params = ProcedureParams(row)
             proc = Procedure(params)
 
-            if proc.schedStart:
+            if proc.schedStart: # disregard procs without scheduled start times
                 self.procs.append(proc)
                 # self.delayedStarts.append(proc.delayedStart)
                 self.dates.append(proc.date)
