@@ -1,7 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import datetime as dt
-import copy
 
 import statAggregator as sa
 
@@ -15,12 +14,7 @@ def calculateIdleStats(procs):
     liberal idle time, and number of idle intervals. Each dict is one day.
     """
 
-    roomCumIdles = []
-    roomCons = makeRoomsDict(procs)
-    for r in roomCons.keys(): # make all rooms empty lists
-        roomCons[r] = []
-    roomLibs = copy.deepcopy(roomCons)
-
+    roomIdles = []
     i = 0
     while i < len(procs):
 
@@ -31,13 +25,12 @@ def calculateIdleStats(procs):
             i += 1
 
         idBlocks(todaysProcs)
-        roomIdle = findIdles(todaysProcs, roomCons, roomLibs)
-        roomCumIdles.append(roomIdle)
+        roomIdle = findIdles(todaysProcs)
+        roomIdles.append(roomIdle)
 
+    idealCons, idealLibs = calculateIdealIdles(roomIdle, plot=True)
 
-    idealCons, idealLibs = calculateIdealIdles(roomCons, roomLibs)
-
-    return idealCons, idealLibs, roomCumIdles
+    return idealCons, idealLibs, roomIdles
 
 def idBlocks(procs):
     """
@@ -62,14 +55,13 @@ def idBlocks(procs):
             surgery.blockId = blockId
         blockId += 1
 
-def findIdles(procs, roomCons, roomLibs):
+
+def findIdles(procs):
     """
     Inputs:
     procs - a list of exactly one days worth of Procedure objects
 
     Outputs:
-    cons -
-    libs -
     roomIdles - a dict where keys are rooms and values are liberal and conservative idle times. Represents one day.
     """
 
@@ -87,29 +79,36 @@ def findIdles(procs, roomCons, roomLibs):
 
         cons = []
         libs = []
-        for i, surgery in enumerate(surgeries[1:]):
-            if surgery.blockId == surgeries[i].blockId:
-                # must be datetimes, not time objects, for subtraction
-                inRoom = dt.datetime.combine(dt.datetime(1,1,1), surgery.inRoom)
-                prevProcEnd = dt.datetime.combine(dt.datetime(1,1,1), surgeries[i].procEnd)
-                prevOutRoom = dt.datetime.combine(dt.datetime(1,1,1), surgeries[i].outRoom)
+        currentBlockCons = []
+        currentBlockLibs = []
+        if surgeries:
+            currentBlockId = surgeries[0].blockId
+            for i, surgery in enumerate(surgeries[1:]):
+                if surgery.blockId == currentBlockId:
+                    # must be datetimes, not time objects, for subtraction
+                    inRoom = dt.datetime.combine(dt.datetime(1,1,1), surgery.inRoom)
+                    prevProcEnd = dt.datetime.combine(dt.datetime(1,1,1), surgeries[i].procEnd)
+                    prevOutRoom = dt.datetime.combine(dt.datetime(1,1,1), surgeries[i].outRoom)
 
-                cons.append(inRoom - prevOutRoom)
-                libs.append(inRoom - prevProcEnd)
+                    conDelta = inRoom - prevOutRoom
+                    conDelta = conDelta.seconds / 60 # convert to int in minutes
+                    libDelta = inRoom - prevProcEnd
+                    libDelta = libDelta.seconds / 60 # convert to int in minutes
+                    currentBlockCons.append(conDelta)
+                    currentBlockLibs.append(libDelta)
+                else:
+                    cons.append(currentBlockCons)
+                    libs.append(currentBlockLibs)
+                    currentBlockCons = []
+                    currentBlockLibs = []
+                    currentBlockId = surgery.blockId
 
-        cons = [c.seconds / 60 for c in cons] # convert to int in minutes
-        libs = [l.seconds / 60 for l in libs] # convert to int in minutes
-        cumCon = sum(cons)
-        cumLib = sum(libs)
-        roomIdles[room] = [cumCon, cumLib, len(cons)]
-
-        roomCons[room].extend(cons)
-        roomLibs[room].extend(libs)
+        roomIdles[room] = [cons, libs]
 
     return roomIdles
 
 
-def calculateIdealIdles(roomCons, roomLibs, percentileToAvg=-1):
+def calculateIdealIdles(roomCons, roomLibs, percentileToAvg=-1, plot=False):
     """
     Inputs:
     roomCons - Dict. Keys are rooms, values are lists of individual idle times in minutes
