@@ -25,7 +25,8 @@ class Procedure(object):
         self.room = procParams.room
         self.loc = procParams.loc
         self.logNum = procParams.logNum
-        self.straddledMidnight = False
+        self.outRoomStraddledMidnight = self.outRoom < self.inRoom
+        self.procEndStraddledMidnight = self.procEnd < self.inRoom
 
 
         self.ensureAllEntriesCorrect(procParams)
@@ -56,7 +57,6 @@ class Procedure(object):
             try:
                 startHour, endHour = dur[0] / 100, dur[1] / 100
                 if (endHour < startHour): # if procedure went from one day to the next
-                    self.straddledMidnight = True
                     endHour = (24 - startHour) + endHour
                     startHour = 0
 
