@@ -177,6 +177,10 @@ def calculateIdealIdles(roomIdles, percentileToAvg=-1, plot=False):
                 print room + " had no individual idle times"
                 ideals[room] = 0
 
+    # Debugging
+    for room, l in ideals.items():
+        print "The ideal idle time for " + room + " is calculated to be " + str(l)
+
     return ideals
 
 
@@ -310,16 +314,17 @@ def flipThruPlotter(plotFunction, **kwargs):
     plotFunction(curr_pos = 0, **kwargs)
     plt.show()
 
-def makeRealRoomIdles(roomIdles, ideals):
+def roomIdlesMinusIdeals(roomIdles, ideals):
 
     realRoomIdles = []
     for r in roomIdles:
         newIdles = {}
         for room, idles in r.items():
-            try:
-                newIdles[room] = [idles[0] - idealCons[room]*idles[2], idles[1] - idealLibs[room]*idles[2]]
-            except KeyError:
-                newIdles[room] = [idles[0], idles[1]]
+            newBlocks = []
+            for block in idles:
+                newBlock = [max(indiv - ideals[room], 0) for indiv in block]
+                newBlocks.append(newBlock)
+            newIdles[room] = newBlocks
         realRoomIdles.append(newIdles)
     return realRoomIdles
 
@@ -351,8 +356,9 @@ def plotTrueIdleDist(roomIdles):
 
 excel = sa.StatAggregator('Report for Dr Stehr_Jean Walrand 2016.xlsx', max=1000)
 ideals, roomIdles = calculateIdleStats(excel.procs)
-# realRoomIdles = makeRealRoomIdles(roomIdles, ideals)
+realRoomIdles = roomIdlesMinusIdeals(roomIdles, ideals)
 # plotTrueIdleDist(realRoomIdles)
 roomPlots = idleDictsToTuples(roomIdles)
+realRoomPlots = idleDictsToTuples(roomIdles)
 idlePlotter(excel, roomPlots)
 
