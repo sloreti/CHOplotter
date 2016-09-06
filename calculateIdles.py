@@ -122,28 +122,43 @@ def calculateIdealIdles(roomIdles, percentileToAvg=-1, plot=False):
 
     Outputs:
     ideals - Dict. Keys are rooms, values are estimated ideal cleaning times
+
+    Inefficient
     """
 
     # gather by room
     ideals = {}
-    onlyBest = False
-    if percentileToAvg > 1 or percentileToAvg < 0:
+    if percentileToAvg > 1 or percentileToAvg <= 0:
         onlyBest = True
     for day in roomIdles:
         for room in day.keys():
             if room in ideals:
                 flattenedList = [item for sublist in day[room] for item in sublist]
                 for item in flattenedList:
-                    if onlyBest:
+                    if onlyBest and not plot:
                         ideals[room].add(item)
                         ideals[room].pop()
                     else:
                         ideals[room].add(item)
-
-
             else:
                 flattenedList = [item for sublist in day[room] for item in sublist]
                 ideals[room] = SortedList(flattenedList)
+
+    if plot:
+        def idleHistogram(curr_pos=0, plots=None):
+            #TODO: incorporate percentileToAvg
+            try:
+                plt.hist(plots.values()[curr_pos], 60, facecolor='green', alpha=0.75)
+            except IndexError:
+                print plots.keys()[curr_pos] + " had no individual idle times"
+            plt.xlabel('Individual Idle Times')
+            plt.ylabel('Occurences')
+            plt.title(plots.keys()[curr_pos])
+            plt.grid(True)
+
+        flipThruPlotter(idleHistogram, plots = ideals)
+
+
 
     # reduce to mean
     if not onlyBest:
@@ -151,6 +166,16 @@ def calculateIdealIdles(roomIdles, percentileToAvg=-1, plot=False):
             upperIndex = int(len(l) * percentileToAvg) - 1
             l = sum(l[:upperIndex]) / (upperIndex+1)
             ideals[room] = l
+
+    # If we wanted only best, but we accumulated all ideals for plotting, ditch all but best
+    if onlyBest and plot:
+        for room, l in ideals.items():
+            try:
+                best = ideals[room].pop(0)
+                ideals[room] = best
+            except IndexError:
+                print room + " had no individual idle times"
+                ideals[room] = 0
 
     return ideals
 
@@ -258,6 +283,31 @@ def idlePlotter(excel, roomPlots):
     ax.set_title(currDay)
     ax.set_ylabel('Minutes')
     plt.legend(bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.)
+    plt.show()
+
+def flipThruPlotter(plotFunction, **kwargs):
+
+    # Closure is needed so that key_event can write to curr_pos
+    def callback(**kwargs):
+        curr_pos = [0] # List, not int, so that we can write to var in Python 2
+        plots = kwargs['plots']
+        def key_event(e):
+            if e.key == "right":
+                curr_pos[0] += 1
+            elif e.key == "left":
+                curr_pos[0] -= 1
+            else:
+                return
+            curr_pos[0] = curr_pos[0] % len(plots)
+            ax.cla()
+            plotFunction(curr_pos = curr_pos[0], plots=plots)
+            fig.canvas.draw()
+        return key_event
+
+    fig = plt.figure()
+    fig.canvas.mpl_connect('key_press_event', callback(**kwargs))
+    ax = fig.add_subplot(111)
+    plotFunction(curr_pos = 0, **kwargs)
     plt.show()
 
 def makeRealRoomIdles(roomIdles, ideals):
