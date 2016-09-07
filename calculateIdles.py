@@ -1,3 +1,4 @@
+import argparse
 import numpy as np
 import matplotlib.pyplot as plt
 import datetime as dt
@@ -137,12 +138,19 @@ def calculateIdealIdles(roomIdles, percentileToAvg=-1, plot=False):
                 for item in flattenedList:
                     if onlyBest and not plot:
                         ideals[room].add(item)
-                        ideals[room].pop()
+                        if len(ideals[room]) > 1:
+                            ideals[room].pop()
                     else:
                         ideals[room].add(item)
             else:
                 flattenedList = [item for sublist in day[room] for item in sublist]
-                ideals[room] = SortedList(flattenedList)
+                if onlyBest and not plot:
+                    if flattenedList:
+                        ideals[room] = SortedList([min(flattenedList)])
+                    else:
+                        ideals[room] = SortedList([])
+                else:
+                    ideals[room] = SortedList(flattenedList)
 
     if plot:
         def idleHistogram(curr_pos = 0, plots = None, **kwargs):
@@ -159,16 +167,14 @@ def calculateIdealIdles(roomIdles, percentileToAvg=-1, plot=False):
 
         flipThruPlotter(idleHistogram, [ideals])
 
-    # reduce to mean
-    if not onlyBest:
-        for room, l in ideals.items():
+    # reduce to an integer
+    for room, l in ideals.items():
+        if not onlyBest:
             upperIndex = int(len(l) * percentileToAvg) - 1
+            upperIndex = max(upperIndex, 0)
             l = sum(l[:upperIndex]) / (upperIndex+1)
             ideals[room] = l
-
-    # If we wanted only best, but we accumulated all ideals for plotting, ditch all but best
-    if onlyBest and plot:
-        for room, l in ideals.items():
+        else:
             try:
                 best = ideals[room].pop(0)
                 ideals[room] = best
@@ -202,8 +208,6 @@ def idleDictsToTuples(dictsOfIdles):
     roomPlots - a list of plottable 2-tuples. First value is list of rooms, second is list of lists representing cumulative idle
     time per block
     """
-
-    # TODO: Make 0s into 0.1s or soemthing?
 
     roomPlots = []
     for d in dictsOfIdles:
@@ -318,15 +322,48 @@ def plotTrueIdleDist(roomIdles):
 
     plt.show()
 
+def printThresholdedDates(excel, realRoomIdles, room, threshold):
+
+    startDate = excel.procs[0].date
+    thresholdedDates = []
+    for i, roomIdle in enumerate(realRoomIdles):
+        if room in roomIdle:
+            flattenedList = [item for sublist in roomIdle[room] for item in sublist]
+            dailyCumulative = sum(flattenedList)
+            if dailyCumulative >= threshold:
+                date = (startDate + dt.timedelta(days=i)).isoformat()[:10]
+                thresholdedDates.append(date)
+
+    print "\n\nDays with \"real\" cumulative idle time >= " +  str(threshold) + " minutes in " + str(room) + ":"
+    for d in thresholdedDates:
+        print d
+    return thresholdedDates
+
+def parseInputs():
+    parser = argparse.ArgumentParser(description="Query excel file for days with daily cumulative \"real\" idle time "
+                                                 "over a threshold")
+    parser.add_argument("filename", help="Excel file to read surgery data from")
+    parser.add_argument("-m", "--min", help="Row to start processing excel data", type=int, required=True) # TODO: change to dates
+    parser.add_argument("-M", "--max", help="Row to finish processing excel data", type=int, required=True) # TODO: change to dates
+    args = parser.parse_args()
+
+    # TODO: fix plotTrueIdleDist()
+
+    # should be 'Report for Dr Stehr_Jean Walrand 2016.xlsx', 1, 1000
+    excel = sa.StatAggregator(args.filename, min= args.min, max=args.max) #TODO: ensure valid file name and exists
+    ideals, roomIdles = calculateIdleStats(excel.procs)
+    realRoomIdles = roomIdlesMinusIdeals(roomIdles, ideals)
+    # plotTrueIdleDist(realRoomIdles)
+    roomPlots = idleDictsToTuples(roomIdles)
+    realRoomPlots = idleDictsToTuples(realRoomIdles)
+    flipThruPlotter(dailyIdlePlot, [roomPlots, realRoomPlots], excel=excel)
+
+    while True:
+        print "\n"
+        room = raw_input("Enter room: ")
+        threshold = raw_input("Enter threshold, in minutes:")
+        printThresholdedDates(excel, realRoomIdles, room, int(threshold))
 
 
-# TODO: fix plotTrueIdleDist()
-
-excel = sa.StatAggregator('Report for Dr Stehr_Jean Walrand 2016.xlsx', max=1000)
-ideals, roomIdles = calculateIdleStats(excel.procs)
-realRoomIdles = roomIdlesMinusIdeals(roomIdles, ideals)
-# plotTrueIdleDist(realRoomIdles)
-roomPlots = idleDictsToTuples(roomIdles)
-realRoomPlots = idleDictsToTuples(realRoomIdles)
-flipThruPlotter(dailyIdlePlot, [roomPlots, realRoomPlots], excel=excel)
+parseInputs()
 
