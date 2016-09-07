@@ -145,8 +145,9 @@ def calculateIdealIdles(roomIdles, percentileToAvg=-1, plot=False):
                 ideals[room] = SortedList(flattenedList)
 
     if plot:
-        def idleHistogram(curr_pos=0, plots=None):
+        def idleHistogram(curr_pos = 0, plots = None, **kwargs):
             #TODO: incorporate percentileToAvg
+            plots = plots[0] # de-list
             try:
                 plt.hist(plots.values()[curr_pos], 60, facecolor='green', alpha=0.75)
             except IndexError:
@@ -156,9 +157,7 @@ def calculateIdealIdles(roomIdles, percentileToAvg=-1, plot=False):
             plt.title(plots.keys()[curr_pos])
             plt.grid(True)
 
-        flipThruPlotter(idleHistogram, plots = ideals)
-
-
+        flipThruPlotter(idleHistogram, [ideals])
 
     # reduce to mean
     if not onlyBest:
@@ -179,7 +178,7 @@ def calculateIdealIdles(roomIdles, percentileToAvg=-1, plot=False):
 
     # Debugging
     for room, l in ideals.items():
-        print "The ideal idle time for " + room + " is calculated to be " + str(l)
+        print "Ideal idle time for " + room + " is " + str(l) + " minutes"
 
     return ideals
 
@@ -200,7 +199,7 @@ def idleDictsToTuples(dictsOfIdles):
     dictsOfIdles - a list of dicts, where keys are rooms and values are lists of lists of idle times. Each dict is one day.
 
     Outputs:
-    roomPlots - a list of plottable 2-tuples. First value is rooms, second is list of lists representing cumulative idle
+    roomPlots - a list of plottable 2-tuples. First value is list of rooms, second is list of lists representing cumulative idle
     time per block
     """
 
@@ -229,38 +228,48 @@ def idleDictsToTuples(dictsOfIdles):
     return roomPlots
 
 
-def idlePlotter(excel, roomPlots):
+def dailyIdlePlot(curr_pos=0, plots=None, ax=None, excel=None):
+    rooms = plots[0][curr_pos][0]
+    ind = np.arange(len(rooms))
+    width = 0.2
+    palette = ['#a8e6ce', '#dcedc2', '#ffd3b5', '#ffaaa6', '#ff8c94']
+
+    for plotNum in range(len(plots)):
+        cumIdles = plots[plotNum][curr_pos][1]
+        start = [0]*len(cumIdles)
+        for i in range(len(cumIdles[0])):
+            color = palette[i % len(palette)]
+            block = [c[i] for c in cumIdles]
+            if plotNum == 0: # Don't create duplicate labels
+                ax.bar(ind + width*plotNum, block, width, color=color, bottom=start, label='Block ' + str(i + 1))
+            else:
+                ax.bar(ind + width*plotNum, block, width, color=color, bottom=start)
+            start = map(lambda x, y: x + y, start, block)
+
+
+    plt.legend(bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.)
+    ax.set_xticks(ind + width / 2)
+    ax.set_xticklabels(rooms, rotation=90)
+    currDay = (excel.procs[0].date + dt.timedelta(days=curr_pos)).isoformat()[:10]
+    ax.set_title(currDay)
+    ax.set_ylabel('Minutes')
+
+
+def flipThruPlotter(plotFunction, plots, **kwargs):
 
     # Closure is needed so that key_event can write to curr_pos
     def callback():
-        curr_pos = [0]
+        curr_pos = [0] # List, not int, so that we can write to var in Python 2
         def key_event(e):
-
             if e.key == "right":
                 curr_pos[0] += 1
             elif e.key == "left":
                 curr_pos[0] -= 1
             else:
                 return
-            curr_pos[0] = curr_pos[0] % len(roomPlots)
-            currDay = (excel.procs[0].date + dt.timedelta(days=curr_pos[0])).isoformat()[:10]
-
+            curr_pos[0] = curr_pos[0] % len(plots[0])
             ax.cla()
-            rooms = roomPlots[curr_pos[0]][0]
-            cumIdles = roomPlots[curr_pos[0]][1]
-            ind = np.arange(len(rooms))
-            width = 0.2
-
-            palette = ['#a8e6ce', '#dcedc2', '#ffd3b5', '#ffaaa6', '#ff8c94']
-            for i in range(len(cumIdles[0])):
-                color = palette[i % len(palette)]
-                block = [c[i] for c in cumIdles]
-                bar = ax.bar(ind, block, width, color=color, label='Block ' + str(i+1))
-
-            plt.legend(bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.)
-            ax.set_xticks(ind + width / 2)
-            ax.set_xticklabels(rooms, rotation=90)
-            ax.set_title(currDay)
+            plotFunction(curr_pos = curr_pos[0], plots=plots, **kwargs)
             fig.canvas.draw()
         return key_event
 
@@ -268,50 +277,9 @@ def idlePlotter(excel, roomPlots):
     fig.canvas.mpl_connect('key_press_event', callback())
     ax = fig.add_subplot(111)
     box = ax.get_position()
-    ax.set_position([box.x0, box.y0, box.width * 0.8, box.height]) # make room for legend
-
-    rooms = roomPlots[0][0]
-    cumIdles = roomPlots[0][1]
-    currDay = excel.procs[0].date.isoformat()[:10]
-    ind = np.arange(len(rooms))
-    width = 0.2
-
-    palette = ['#a8e6ce','#dcedc2','#ffd3b5','#ffaaa6','#ff8c94']
-    for i in range(len(cumIdles[0])):
-        color = palette[i % len(palette)]
-        block = [c[i] for c in cumIdles]
-        bar = ax.bar(ind, block, width, color=color, label='Block ' + str(i+1))
-
-    ax.set_xticks(ind + width / 2)
-    ax.set_xticklabels(rooms, rotation=90)
-    ax.set_title(currDay)
-    ax.set_ylabel('Minutes')
-    plt.legend(bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.)
-    plt.show()
-
-def flipThruPlotter(plotFunction, **kwargs):
-
-    # Closure is needed so that key_event can write to curr_pos
-    def callback(**kwargs):
-        curr_pos = [0] # List, not int, so that we can write to var in Python 2
-        plots = kwargs['plots']
-        def key_event(e):
-            if e.key == "right":
-                curr_pos[0] += 1
-            elif e.key == "left":
-                curr_pos[0] -= 1
-            else:
-                return
-            curr_pos[0] = curr_pos[0] % len(plots)
-            ax.cla()
-            plotFunction(curr_pos = curr_pos[0], plots=plots)
-            fig.canvas.draw()
-        return key_event
-
-    fig = plt.figure()
-    fig.canvas.mpl_connect('key_press_event', callback(**kwargs))
-    ax = fig.add_subplot(111)
-    plotFunction(curr_pos = 0, **kwargs)
+    ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])  # make room for legend
+    kwargs['ax'] = ax
+    plotFunction(curr_pos = 0, plots = plots, **kwargs)
     plt.show()
 
 def roomIdlesMinusIdeals(roomIdles, ideals):
@@ -352,13 +320,13 @@ def plotTrueIdleDist(roomIdles):
 
 
 
-# TODO: fix makeRealRoomIdles() and plotTrueIdleDist() and tidy up idlePlotter()
+# TODO: fix plotTrueIdleDist()
 
 excel = sa.StatAggregator('Report for Dr Stehr_Jean Walrand 2016.xlsx', max=1000)
 ideals, roomIdles = calculateIdleStats(excel.procs)
 realRoomIdles = roomIdlesMinusIdeals(roomIdles, ideals)
 # plotTrueIdleDist(realRoomIdles)
 roomPlots = idleDictsToTuples(roomIdles)
-realRoomPlots = idleDictsToTuples(roomIdles)
-idlePlotter(excel, roomPlots)
+realRoomPlots = idleDictsToTuples(realRoomIdles)
+flipThruPlotter(dailyIdlePlot, [roomPlots, realRoomPlots], excel=excel)
 
