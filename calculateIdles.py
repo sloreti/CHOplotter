@@ -27,7 +27,7 @@ def calculateIdleStats(procs):
             i += 1
 
         idBlocks(todaysProcs)
-        roomIdle = findIdles(todaysProcs)
+        roomIdle = findIdles(todaysProcs, trailingIdles=True)
         roomIdles.append(roomIdle)
 
     ideals = calculateIdealIdles(roomIdles, plot=True)
@@ -58,7 +58,7 @@ def idBlocks(procs):
         blockId += 1
 
 
-def findIdles(procs, estimate='conservative'):
+def findIdles(procs, estimate='conservative', trailingIdles = False):
     """
     Inputs:
     procs - a list of exactly one days worth of Procedure objects
@@ -78,8 +78,10 @@ def findIdles(procs, estimate='conservative'):
         currentBlockIdles = []
 
         if surgeries:
+
             currentBlockId = surgeries[0].blockId
             for i, surgery in enumerate(surgeries[1:]):
+
                 if surgery.blockId == currentBlockId:
 
                     if estimate == 'liberal':
@@ -101,7 +103,29 @@ def findIdles(procs, estimate='conservative'):
 
                     delta = delta.seconds / 60 # convert to int in minutes
                     currentBlockIdles.append(delta)
-                else:
+
+                else: # finish current block, begin next
+
+                    if trailingIdles:
+                        # Find schedEnd of this block and append any trailing idle time to currentBlockIdles
+                        currBlockProcs = filter(lambda x: x.blockId == currentBlockId, surgeries)
+                        lastProcInBlock = max(currBlockProcs, key = lambda x: x.schedEnd)
+                        schedBlockEnd = lastProcInBlock.schedEnd
+                        if estimate == 'liberal':
+                            if schedBlockEnd > surgeries[i].procEnd:
+                                schedBlockEnd = dt.datetime.combine(dt.datetime(1, 1, 1), schedBlockEnd)
+                                prevProcEnd = dt.datetime.combine(dt.datetime(1, 1, 1), surgeries[i].procEnd)
+                                trailingIdle = schedBlockEnd - prevProcEnd
+                                trailingIdle = trailingIdle.seconds / 60  # convert to int in minutes
+                                currentBlockIdles.append(trailingIdle)
+                        else:
+                            if schedBlockEnd > surgeries[i].outRoom:
+                                schedBlockEnd = dt.datetime.combine(dt.datetime(1, 1, 1), schedBlockEnd)
+                                prevOutRoom = dt.datetime.combine(dt.datetime(1, 1, 1), surgeries[i].outRoom)
+                                trailingIdle = schedBlockEnd - prevOutRoom
+                                trailingIdle = trailingIdle.seconds / 60  # convert to int in minutes
+                                currentBlockIdles.append(trailingIdle)
+
                     individualIdles.append(currentBlockIdles)
                     currentBlockIdles = []
                     currentBlockId = surgery.blockId
