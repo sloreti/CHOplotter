@@ -388,6 +388,6 @@ def parseInputs():
         threshold = raw_input("Enter threshold, in minutes:")
         printThresholdedDates(excel, realRoomIdles, room, int(threshold))
 
-
-parseInputs()
+if __name__ == "__main__":
+    parseInputs()
 

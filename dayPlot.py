@@ -1,75 +1,75 @@
-# Ripped from http://stackoverflow.com/questions/32485907/matplotlib-and-numpy-create-a-calendar-heatmap
-
-import matplotlib.pyplot as plt
-import matplotlib.ticker as ticker
-import numpy as np
+import datetime as dt
+import argparse
 
 import statAggregator as sa
+import calculateIdles as ci
 
-def main(rooms, excel):
-    data = generate_data(rooms, excel)
-    fig, ax = plt.subplots(figsize=(15, 6))
-    ax.tick_params(axis='both', labelsize=10)
-    calendar_heatmap(ax, data, rooms)
-    plt.show()
 
-def generate_data(rooms, excel):
-    data = np.nan * np.zeros((len(rooms), 48))
+def groupProcsByDay(procs):
 
-    datesSchedStarts = []
-    datesSchedEnds = []
-    datesRooms = []
-    date = excel.procs[0].date
-    row = 0
-    while True:
-        proc = excel.procs[row]
-        if proc.date == date:
-            datesSchedStarts.append(proc.schedStart)
-            datesSchedEnds.append(proc.schedEnd)
-            datesRooms.append(proc.room)
-        else:
-            break
-        row += 1
+    dayList = []
+    i = 0
+    while i < len(procs): # Because i is incremented in inner loop, this outer while loop is iterated once per day
 
-    for i, start in enumerate(datesSchedEnds):
-        roomIndex = rooms.index(datesRooms[i])
-        startIndex, endIndex = datetimeToIndex(start, datesSchedEnds[i])
-        data[roomIndex, startIndex:endIndex] = 1
+        currentDate = procs[i].date
+        todaysProcs = []
+        while i < len(procs) and procs[i].date == currentDate:
+            todaysProcs.append(procs[i])
+            i += 1
+        dayList.append(todaysProcs)
+    return dayList
 
-    return data
+def dayPlot(curr_pos = 0, plots = None, ax=None):
 
-def datetimeToIndex(start, end):
-    startIndex = start.hour*2 + (start.minute >= 30)
-    endIndex = end.hour * 2 + (end.minute >= 30)
-    return startIndex, endIndex
+    barSpacing = 12
+    barWidth = 4
 
-def calendar_array(rooms, data):
+    procs = plots[curr_pos]
+    if procs:
+        currDay = procs[0].date.isoformat()[:10]
+    else:
+        currDay = "No Procedures"
 
-    calendar = np.nan * np.zeros((len(rooms), 48))
-    calendar[i, j] = data
-    return i, j, calendar
+    # Group the procedures by room
+    rooms = ci.makeRoomsDict(procs)
 
-def calendar_heatmap(ax, data, rooms):
-    im = ax.imshow(data, interpolation='none', cmap='summer')
-    label_days(ax)
-    label_months(ax, rooms)
+    earliest = min(min([proc.schedStart.hour * 60 + proc.schedStart.minute for proc in procs]),
+                   min([proc.inRoom.hour * 60 + proc.inRoom.minute for proc in procs]))
+    latest = max(max([proc.schedEnd.hour * 60 + proc.schedEnd.minute for proc in procs]),
+                   max([proc.outRoom.hour * 60 + proc.outRoom.minute for proc in procs]))
 
-def label_days(ax):
+    for i, (room, l) in enumerate(rooms.items()):
+        schedTimes = [(proc.schedStart.hour * 60 + proc.schedStart.minute, proc.schedLength.seconds/60) for proc in l]
+        inOutTimes = [(proc.inRoom.hour * 60 + proc.inRoom.minute, proc.roomDuration.seconds/60) for proc in l]
+        procTimes = [(proc.procStart.hour * 60 + proc.procStart.minute, proc.procDuration.seconds/60) for proc in l]
+        ax.broken_barh(schedTimes, (barSpacing * i + barWidth + 1, barWidth), facecolors='#66b3ff')
+        ax.broken_barh(inOutTimes, (barSpacing * i + (barWidth + 1) * 2, barWidth), facecolors='#ffcc99')
+        ax.broken_barh(procTimes, (barSpacing * i + (barWidth + 1) * 2, barWidth), facecolors='#e67300')
 
-    ax.set(xticks=np.arange(49))
-    ax.set_xticklabels([str(hour) + min for hour in range(24) for min in (':00',':30')],
-                       rotation=90)
+    ax.set_ylim(0, len(rooms) * barSpacing + (barWidth + 1) * 3)
+    ax.set_xlabel('Hour')
+    ax.set_ylabel('Room')
+    ax.set_yticks([barSpacing * i + (barWidth + 1) * 2 for i in range(len(rooms))])
+    ax.set_yticklabels(rooms.keys())
+    halfHourList = [30*i for i in range(48)]
+    ax.set_xticks(halfHourList)
+    ax.set_xticklabels([str(h/60) + ':' + str(h%60).zfill(2)  for h in halfHourList], rotation=90)
+    ax.set_xlim(earliest - 30, latest + 30)
+    ax.set_title(currDay)
+    ax.grid(True)
 
-def label_months(ax, rooms):
 
-    ax.set(yticks=np.arange(len(rooms)+1))
 
-    # Hide major tick labels
-    ax.yaxis.set_major_formatter(ticker.NullFormatter())
+def parseInputs():
+    parser = argparse.ArgumentParser(description="Query excel file for days with daily cumulative \"real\" idle time "
+                                                 "over a threshold")
+    parser.add_argument("filename", help="Excel file to read surgery data from")
+    parser.add_argument("-m", "--min", help="Row to start processing excel data", type=int, required=True) # TODO: change to dates
+    parser.add_argument("-M", "--max", help="Row to finish processing excel data", type=int, required=True) # TODO: change to dates
+    args = parser.parse_args()
 
-    # Customize minor tick labels
-    ax.yaxis.set_minor_locator(ticker.FixedLocator([i + .5 for i in range(len(rooms))]))
-    ax.yaxis.set_minor_formatter(ticker.FixedFormatter(rooms))
+    excel = sa.StatAggregator(args.filename, min=args.min, max=args.max)  # TODO: ensure valid file name and exists
+    dayList = groupProcsByDay(excel.procs)
+    ci.flipThruPlotter(dayPlot, dayList)
 
-excel = sa.StatAggregator('ProceduresData.xlsx')
-main(['MOR 1','MOR 2','MOR 3','MOR 4','MOR 5','MOR 6','OPC 1','OPC 2','OPC 3'], excel)
+parseInputs()
