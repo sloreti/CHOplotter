@@ -17,6 +17,7 @@ def calculateIdleStats(procs):
     """
 
     roomIdles = []
+    onlyInBetweenIdles = []
     i = 0
     while i < len(procs): # Because i is incremented in inner loop, this outer while loop is iterated once per day
 
@@ -29,8 +30,10 @@ def calculateIdleStats(procs):
         idBlocks(todaysProcs)
         roomIdle = findIdles(todaysProcs, trailingIdles=True)
         roomIdles.append(roomIdle)
+        inBetweenIdle = findIdles(todaysProcs)
+        onlyInBetweenIdles.append(inBetweenIdle)
 
-    ideals = calculateIdealIdles(roomIdles, plot=True)
+    ideals = calculateIdealIdles(onlyInBetweenIdles, plot=True)
 
     return ideals, roomIdles
 
