@@ -366,8 +366,12 @@ def parseInputs():
     parser = argparse.ArgumentParser(description="Query excel file for days with daily cumulative \"real\" idle time "
                                                  "over a threshold")
     parser.add_argument("filename", help="Excel file to read surgery data from")
-    parser.add_argument("-m", "--min", help="Row to start processing excel data", required=True) # TODO: change to dates
-    parser.add_argument("-M", "--max", help="Row to finish processing excel data", required=True) # TODO: change to dates
+    parser.add_argument("-m", "--min", help="Date ('mm/dd/yy' format) or row to start processing excel data. If row, 1 refers "
+                                            "to first row containing data, not necessarily first row of excel sheet",
+                        required=True)
+    parser.add_argument("-M", "--max", help="Date ('mm/dd/yy' format) or row to finish processing excel data. If row, 1 refers ",
+                        required=True)
+
     args = parser.parse_args()
 
     # TODO: fix plotTrueIdleDist()

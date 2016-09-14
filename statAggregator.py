@@ -123,16 +123,25 @@ class StatAggregator(object):
         finish = time.clock()
         print "Loading workbook took " + str(finish - start) + " seconds"
 
-        minDate = dt.datetime.strptime(min, '%m/%d/%y') if min else dt.date(dt.MINYEAR,1,1) # TODO: Should probably check if valid str
-        maxDate = dt.datetime.strptime(max, '%m/%d/%y') if max else dt.date(dt.MAXYEAR,1,1)
+        # check if -m and -M args were row nums or dates
+        rowArgs = False
+        dateArgs = False
+        try:
+            minRow = int(min) if min else -float("inf")
+            maxRow = int(max) if max else float("inf")
+            rowArgs = True
+        except ValueError:
+            minDate = dt.datetime.strptime(min, '%m/%d/%y') if min else dt.date(dt.MINYEAR,1,1) # TODO: Should probably check if valid str
+            maxDate = dt.datetime.strptime(max, '%m/%d/%y') if max else dt.date(dt.MAXYEAR,1,1)
+            dateArgs = True
 
         self.procs = []
-        # self.delayedStarts = []
         self.dates = []
 
         for i, row in enumerate(sheet.rows[1:]): # skip first row of data labels
             params = ProcedureParams(row)
-            if params.date and params.date >= minDate and params.date <= maxDate:
+            if dateArgs and (params.date and params.date >= minDate and params.date <= maxDate)\
+                    or rowArgs and (params.date and i+1 >= minRow and i+1 <=maxRow): # +1 because data starts on 2nd row
                 proc = Procedure(params)
 
                 if proc.schedStart: # disregard procs without scheduled start times
