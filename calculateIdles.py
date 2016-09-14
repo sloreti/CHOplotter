@@ -135,7 +135,7 @@ def findIdles(procs, estimate='conservative', trailingIdles = False):
 
         roomIdles[room] = individualIdles
 
-    return roomIdles
+    return roomIdles # TODO: add a withTrailing data structure
 
 
 def calculateIdealIdles(roomIdles, percentileToAvg=-1, plot=False):
@@ -179,7 +179,6 @@ def calculateIdealIdles(roomIdles, percentileToAvg=-1, plot=False):
     if plot:
         def idleHistogram(curr_pos = 0, plots = None, **kwargs):
             #TODO: incorporate percentileToAvg
-            plots = plots[0] # de-list
             try:
                 plt.hist(plots.values()[curr_pos], 60, facecolor='green', alpha=0.75)
             except IndexError:
@@ -189,7 +188,7 @@ def calculateIdealIdles(roomIdles, percentileToAvg=-1, plot=False):
             plt.title(plots.keys()[curr_pos])
             plt.grid(True)
 
-        flipThruPlotter(idleHistogram, [ideals])
+        flipThruPlotter(idleHistogram, ideals)
 
     # reduce to an integer
     for room, l in ideals.items():
@@ -283,7 +282,7 @@ def dailyIdlePlot(curr_pos=0, plots=None, ax=None, excel=None):
     ax.set_ylabel('Minutes')
 
 
-def flipThruPlotter(plotFunction, plots, **kwargs):
+def flipThruPlotter(plotFunction, plots, multiple=False, **kwargs):
 
     # Closure is needed so that key_event can write to curr_pos
     def callback():
@@ -295,7 +294,7 @@ def flipThruPlotter(plotFunction, plots, **kwargs):
                 curr_pos[0] -= 1
             else:
                 return
-            curr_pos[0] = curr_pos[0] % len(plots[0])
+            curr_pos[0] = curr_pos[0] % len(plots[0]) if multiple else curr_pos[0] % len(plots)
             ax.cla()
             plotFunction(curr_pos = curr_pos[0], plots=plots, **kwargs)
             fig.canvas.draw()
@@ -367,8 +366,8 @@ def parseInputs():
     parser = argparse.ArgumentParser(description="Query excel file for days with daily cumulative \"real\" idle time "
                                                  "over a threshold")
     parser.add_argument("filename", help="Excel file to read surgery data from")
-    parser.add_argument("-m", "--min", help="Row to start processing excel data", type=int, required=True) # TODO: change to dates
-    parser.add_argument("-M", "--max", help="Row to finish processing excel data", type=int, required=True) # TODO: change to dates
+    parser.add_argument("-m", "--min", help="Row to start processing excel data", required=True) # TODO: change to dates
+    parser.add_argument("-M", "--max", help="Row to finish processing excel data", required=True) # TODO: change to dates
     args = parser.parse_args()
 
     # TODO: fix plotTrueIdleDist()
@@ -380,7 +379,7 @@ def parseInputs():
     # plotTrueIdleDist(realRoomIdles)
     roomPlots = idleDictsToTuples(roomIdles)
     realRoomPlots = idleDictsToTuples(realRoomIdles)
-    flipThruPlotter(dailyIdlePlot, [roomPlots, realRoomPlots], excel=excel)
+    flipThruPlotter(dailyIdlePlot, [roomPlots, realRoomPlots], multiple=True, excel=excel)
 
     while True:
         print "\n"

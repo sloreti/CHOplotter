@@ -1,6 +1,6 @@
 #!/usr/bin/env python 
 
-import datetime
+import datetime as dt
 import openpyxl
 import time
 
@@ -41,9 +41,9 @@ class Procedure(object):
         if s:
             s = int(s)
             if not delta:
-                return datetime.time(s/100, s%100) # (hours, minutes)
+                return dt.time(s/100, s%100) # (hours, minutes)
             else:
-                return datetime.timedelta(minutes = s)
+                return dt.timedelta(minutes = s)
         else:
             return None
         
@@ -81,11 +81,11 @@ class Procedure(object):
     def calculateDelays(self):
 
         if self.schedStart and self.procStart:
-            start = datetime.datetime.combine(self.date, self.schedStart)
+            start = dt.datetime.combine(self.date, self.schedStart)
             if (self.schedStart > self.procStart): # if procedure started the next day TODO: might need to be improved
-                finish = datetime.datetime.combine(self.date + datetime.timedelta(days=1), self.procStart)
+                finish = dt.datetime.combine(self.date + dt.timedelta(days=1), self.procStart)
             else:
-                finish = datetime.datetime.combine(self.date, self.procStart)
+                finish = dt.datetime.combine(self.date, self.procStart)
             delta  = finish - start
             self.delayedStart = delta.total_seconds() / 60 # minutes
             if self.delayedStart > 600:
@@ -115,7 +115,7 @@ class ProcedureParams(object):
 
 class StatAggregator(object):
 
-    def __init__(self, excel, min=1, max=None):
+    def __init__(self, excel, min = None , max = None):
 
         start = time.clock()
         wb = openpyxl.load_workbook(excel)
@@ -123,41 +123,19 @@ class StatAggregator(object):
         finish = time.clock()
         print "Loading workbook took " + str(finish - start) + " seconds"
 
+        minDate = dt.datetime.strptime(min, '%m/%d/%y') if min else dt.date(dt.MINYEAR,1,1) # TODO: Should probably check if valid str
+        maxDate = dt.datetime.strptime(max, '%m/%d/%y') if max else dt.date(dt.MAXYEAR,1,1)
+
         self.procs = []
         # self.delayedStarts = []
         self.dates = []
 
-        max = max+1 if max else len(sheet.rows)
-        for row in sheet.rows[min:max]:
+        for i, row in enumerate(sheet.rows[1:]): # skip first row of data labels
             params = ProcedureParams(row)
-            proc = Procedure(params)
+            if params.date and params.date >= minDate and params.date <= maxDate:
+                proc = Procedure(params)
 
-            if proc.schedStart: # disregard procs without scheduled start times
-                self.procs.append(proc)
-                # self.delayedStarts.append(proc.delayedStart)
-                self.dates.append(proc.date)
-
-        # # calculate avgs
-        # dailyAvgs=[]
-        # dailyAvgDates=[]
-        # i = 0
-        # while i < len(dates):
-        #     total = 0
-        #     count = 0
-        #     curr = dates[i]
-        #     while i < len(dates) and dates[i] == curr:
-        #         total += delayedStarts[i]
-        #         count += 1
-        #         i += 1
-        #     dailyAvgDates.append(total/count)
-        #     dailyAvgDates.append(curr)
-        #
-        # plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%m/%d/%Y'))
-        # plt.gca().xaxis.set_major_locator(mdates.DayLocator())
-        # plt.scatter(dates,delayedStarts)
-        # # plt.plot(dailyAvgDates, dailyAvgs)
-        # plt.show()
-
-
-
-
+                if proc.schedStart: # disregard procs without scheduled start times
+                    self.procs.append(proc)
+                    # self.delayedStarts.append(proc.delayedStart)
+                    self.dates.append(proc.date)

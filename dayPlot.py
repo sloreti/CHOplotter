@@ -64,8 +64,8 @@ def parseInputs():
     parser = argparse.ArgumentParser(description="Query excel file for days with daily cumulative \"real\" idle time "
                                                  "over a threshold")
     parser.add_argument("filename", help="Excel file to read surgery data from")
-    parser.add_argument("-m", "--min", help="Row to start processing excel data", type=int, required=True) # TODO: change to dates
-    parser.add_argument("-M", "--max", help="Row to finish processing excel data", type=int, required=True) # TODO: change to dates
+    parser.add_argument("-m", "--min", help="Row to start processing excel data", required=True) # TODO: change to dates
+    parser.add_argument("-M", "--max", help="Row to finish processing excel data", required=True) # TODO: change to dates
     args = parser.parse_args()
 
     excel = sa.StatAggregator(args.filename, min=args.min, max=args.max)  # TODO: ensure valid file name and exists
